@@ -2,6 +2,8 @@ package deployment;
 
 import java.util.ArrayList;
 
+import bliptrack.datahandling.DatabaseAccessor;
+
 import netconfig.ModelGraphLink;
 import netconfig.NavteqLink;
 import netconfig.NetconfigException;
@@ -16,7 +18,6 @@ import core.DatabaseReader;
 import core.DatabaseWriter;
 import core.Monitor;
 import core.Time;
-import datahandling.DatabaseAccessor;
 
 /**
  * Pretty much a copy of Boris' work but for Swedish circumstances. I.e. we do
@@ -47,7 +48,7 @@ public class CreateBluetoothDeployment {
 		boolean writeInDb = true;
 
 		/*
-		 * State if running from your own workstation
+		 * State true if running from your own workstation
 		 */
 
 		boolean onLocalMachine = true;
@@ -56,7 +57,7 @@ public class CreateBluetoothDeployment {
 		 * SET the nid to use (the bounding polygon must contain the GPS 
 		 * locations of the sensors)
 		 */
-		int nid = 18;
+		int nid = 30;
 
 		Network net = new Network(Network.NetworkType.MODEL_GRAPH, nid);
 
@@ -64,10 +65,12 @@ public class CreateBluetoothDeployment {
 		 * CREATE EXPERIMENT (with a suitable name)
 		 */
 
-		String expName = "E4 Sorentorp to Haga Sodra - SB Second Try";
-		Time validFrom = Time.newTimeFromBerkeleyDateTime(2013, 2, 28, 15, 0,
+		String expName = "E4 Sorentorp to Haga Sodra - SB - Created 2013-11-19 - Magnus";
+		//Corresponds to 2013-03-01 00:00:00.000 Stockholm local time.
+		Time validFrom = Time.newTimeFromBerkeleyDateTime(2013, 3, 18, 0, 0,
 				0, 0);
-		Time validTo = Time.newTimeFromBerkeleyDateTime(2013, 3, 31, 15, 0, 0,
+		//Corresponds to 2013-04-01 00:00:00.000 Stockholm local time.
+		Time validTo = Time.newTimeFromBerkeleyDateTime(2013, 3, 26, 0, 0, 0,
 				0);
 
 		/*
@@ -228,7 +231,6 @@ public class CreateBluetoothDeployment {
 
 	// Step 7: Populate the props table with the sensors.
 	// TODO: Assumes that there are no earlier sensor records.
-	// TODO: Should we link the sensors to an experiment?
 	private static int[] populatePropTable(BluetoothDeployment exp,
 			Route[] routes, Coordinate[] coordinates,
 			DatabaseAccessor dbAccessor, String[] sensorNames)

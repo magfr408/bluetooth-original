@@ -1,10 +1,11 @@
 package datum;
 
 import core.Time;
+import filters.FilterSettings;
 
 /**
  * This class is an extension of a TripDatum with additional info for the data
- * produced by Bliptrack.
+ * produced by Bliptrack in some cases.
  * 
  * @author magfr408
  */
@@ -12,7 +13,7 @@ public class BliptrackTripDatum extends TripDatum {
 
 	private short analysisId;
 	private String cod;
-	private String outlierLevel;
+	private int outlierLevel;
 
 	/**
 	 * Constructor for a BlipTrackDatum
@@ -24,10 +25,11 @@ public class BliptrackTripDatum extends TripDatum {
 	 */
 	public BliptrackTripDatum(String macAddress, int startReader,
 			int endReader, Time endTime, short analysisId, float travelTime,
-			String classOfDevice, String outLierLevel) {
+			String classOfDevice, int outLierLevel, 
+			FilterSettings.FilterMethod filterMethod) {
 
 		super(macAddress, startReader, endReader, endTime.plus(-1.0f
-				* travelTime), endTime);
+				* travelTime), endTime, filterMethod);
 
 		this.analysisId = analysisId;
 		this.cod = classOfDevice;
@@ -42,7 +44,7 @@ public class BliptrackTripDatum extends TripDatum {
 		return this.cod;
 	}
 
-	public String getOutlierLevel() {
+	public int getOutlierLevel() {
 		return this.outlierLevel;
 	}
 }

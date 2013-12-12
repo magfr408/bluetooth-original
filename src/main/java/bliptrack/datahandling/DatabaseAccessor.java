@@ -1,24 +1,19 @@
-package datahandling;
+package bliptrack.datahandling;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import datum.BliptrackTripDatum;
-import datum.TripDatum;
-import deployment.BluetoothSensor;
-import deployment.BluetoothDeployment;
-import core.Coordinate;
-import core.Database;
+
 import core.DatabaseException;
 import core.DatabaseReader;
 import core.DatabaseWriter;
-import java.util.LinkedList;
-
-import netconfig.ModelGraphLink;
-import netconfig.Spot;
-import core.TimeInterval;
+import core.Exceptions;
 import core.Monitor;
 import core.Time;
+import core.TimeInterval;
+import datum.TripDatum;
+import deployment.BluetoothDeployment;
 import deployment.BluetoothRoute;
+import deployment.BluetoothSensor;
 
 /**
  * This class employs CORE's database classes to read and write to the database.
@@ -58,6 +53,11 @@ public class DatabaseAccessor {
 			String schema = "bluetooth";
 			String ps, query;
 
+			ps = "Select route length between two sensors";
+			query = "SELECT route_length FROM " + schema
+					+ ".route WHERE fk_start_id = ? AND fk_end_id = ?";
+			this.dbr.psCreate(ps, query);
+
 			ps = "Select all start readers corresponding to the experiment";
 			query = "SELECT id FROM " + schema + ".prop "
 					+ " WHERE (prop.fk_exp_id = ?) ORDER BY prop.id";
@@ -73,6 +73,16 @@ public class DatabaseAccessor {
 			ps = "select start and end readers for a route";
 			query = "SELECT fk_start_id, fk_end_id FROM " + schema + ".route"
 					+ " WHERE route.id = ?";
+			this.dbr.psCreate(ps, query);
+
+			ps = "select the start time corresponding to the experiment";
+			query = "SELECT valid_from FROM " + schema + ".experiments"
+					+ " WHERE id = ?";
+			this.dbr.psCreate(ps, query);
+
+			ps = "select the end time corresponding to the experiment";
+			query = "SELECT valid_to FROM " + schema + ".experiments"
+					+ " WHERE id = ?";
 			this.dbr.psCreate(ps, query);
 
 			ps = "select the start and end times corresponding to"
@@ -105,6 +115,11 @@ public class DatabaseAccessor {
 					+ " WHERE date >= ? AND date < ?";
 			this.dbr.psCreate(ps, query);
 
+			ps = "select bliptrack sensor id by exp id and sensor name";
+			query = "SELECT id FROM " + schema + ".prop"
+					+ " WHERE fk_exp_id = ? AND name = ?";
+			this.dbr.psCreate(ps, query);
+
 			/*
 			 * A long list of prepared writing statements
 			 */
@@ -113,38 +128,18 @@ public class DatabaseAccessor {
 			query = "DELETE FROM filtered WHERE fk_start_id = ?";
 			this.dbw.psCreate(ps, query);
 
-			// TODO: COULD NOT OUTLIER BE A BOOLEAN IN filtered?
-			ps = "clear outliers table for a certain start id";
-			query = "DELETE FROM outliers WHERE fk_start_id = ?";
-			this.dbw.psCreate(ps, query);
-
-			//TODO: COLUMN WITH OUTLIER BOOLEAN
 			ps = "insert a travel time datum in the filtered table";
-			query = "INSERT INTO " + schema + ".filtered ("
-					+ " fk_hash_mac, fk_start_id, fk_end_id, date, traveltime)"
-					+ " VALUES ( ?, ?, ?, ?, ?)";
+			query = "INSERT INTO "
+					+ schema
+					+ ".filtered ("
+					+ " fk_hash_mac, fk_start_id, fk_end_id, date, traveltime, isoutlier, filtermethod)"
+					+ " VALUES ( ?, ?, ?, ?, ?, ?, ?)";
 			this.dbw.psCreate(ps, query);
 
-			// TODO: COULD NOT OUTLIER BE A BOOLEAN IN filtered? We have that
-			// information in the trip datum
-			ps = "insert a travel time datum in the outliers table";
-			query = "INSERT INTO " + schema + ".outliers ("
-					+ " fk_hash_mac, fk_start_id, fk_end_id, date, traveltime)"
-					+ " VALUES ( ?, ?, ?, ?, ?)";
-			this.dbw.psCreate(ps, query);
-
-			// FIXME
 			ps = "update a travel time datum in the filtered table";
-			query = "UPDATE filtered SET traveltime = ? WHERE"
+			query = "UPDATE filtered SET traveltime = ?, isoutlier = ? WHERE"
 					+ " fk_hash_mac = ? AND fk_start_id = ? AND"
-					+ " fk_end_id = ? AND date = ?";
-			this.dbw.psCreate(ps, query);
-
-			// FIXME: UPDATE FOR BLIPTRACK
-			ps = "update a travel time datum in the outliers table";
-			query = "UPDATE outliers SET traveltime = ? WHERE"
-					+ " fk_hash_mac = ? AND fk_start_id = ? AND"
-					+ " fk_end_id = ? AND date = ?";
+					+ " fk_end_id = ? AND date = ? AND filtermethod = ?";
 			this.dbw.psCreate(ps, query);
 
 			// FIXME: UPDATE FOR BLIPTRACK
@@ -155,7 +150,7 @@ public class DatabaseAccessor {
 					+ " fk_id, detection_number, hash_mac, scan_duration, date)"
 					+ " VALUES ( ?, ?, ?, ?, ?)";
 			this.dbw.psCreate(ps, query);
-			
+
 			ps = "insert an experiment in the experiments table";
 			query = "INSERT INTO " + schema + ".experiments("
 					+ "name, valid_from, valid_to, fk_nid)"
@@ -196,6 +191,29 @@ public class DatabaseAccessor {
 		if (this.dbw != null) {
 			this.dbw.close();
 		}
+	}
+
+	/**
+	 * @param startId, endId. The prop id of the sensors.
+	 * @throws DatabaseException
+	 * @returns null if there's no defined route between the two sensors. The
+	 *          route length otherwise.
+	 */
+	public Float getRouteLength(int startId, int endId)
+			throws DatabaseException {
+		String ps = "Select route length between two sensors";
+
+		this.dbr.psSetInteger(ps, 1, startId);
+		this.dbr.psSetInteger(ps, 2, endId);
+		this.dbr.psQuery(ps);
+
+		if (this.dbr.psRSNext(ps)) {
+			Float length = this.dbr.psRSGetReal(ps, "route_length");
+			this.dbr.psRSDestroy(ps);
+			return length;
+		}
+
+		return null;
 	}
 
 	/**
@@ -288,6 +306,28 @@ public class DatabaseAccessor {
 	}
 
 	/**
+	 * @param
+	 * @return
+	 * @throws DatabaseException
+	 */
+	public int getSensorIdBySensorNameAndExpId(String name, int expId)
+			throws DatabaseException {
+
+		String ps = "select bliptrack sensor id by exp id and sensor name";
+
+		this.dbr.psSetInteger(ps, 1, expId);
+		this.dbr.psSetVarChar(ps, 2, name);
+		this.dbr.psQuery(ps);
+
+		if (this.dbr.psRSNext(ps)) {
+			int id = this.dbr.psRSGetSmallInt(ps, "id");
+			this.dbr.psRSDestroy(ps);
+			return id;
+		}
+		return -1;
+	}
+
+	/**
 	 * @param timeInterval
 	 * @return
 	 * @throws DatabaseException
@@ -337,6 +377,41 @@ public class DatabaseAccessor {
 		return listRoutes;
 	}
 
+	public Time getStartTimeOfExp(int expId) throws DatabaseException {
+
+		String ps = "select the start time corresponding to the experiment";
+
+		this.dbr.psSetSmallInt(ps, 1, (short) expId);
+		this.dbr.psQuery(ps);
+
+		Time time;
+
+		if (this.dbr.psRSNext(ps)) {
+			time = this.dbr.psRSGetTimestamp(ps, "valid_from");
+			this.dbr.psRSDestroy(ps);
+			return time;
+		} else {
+			return null;
+		}
+	}
+
+	public Time getEndTimeOfExp(int expId) throws DatabaseException {
+
+		String ps = "select the end time corresponding to the experiment";
+
+		this.dbr.psSetSmallInt(ps, 1, (short) expId);
+		this.dbr.psQuery(ps);
+
+		Time time;
+
+		if (this.dbr.psRSNext(ps)) {
+			time = this.dbr.psRSGetTimestamp(ps, "valid_to");
+			this.dbr.psRSDestroy(ps);
+			return time;
+		} else {
+			return null;
+		}
+	}
 
 	/**
 	 * @param sensor
@@ -345,40 +420,40 @@ public class DatabaseAccessor {
 	 */
 	public int insertProp(BluetoothSensor sensor) throws DatabaseException {
 
-		//String ps = "insert a bliptrack sensor in the prop table";
-		//this.dbw.psSetVarChar(ps, 1, sensor.getName());
+		// String ps = "insert a bliptrack sensor in the prop table";
+		// this.dbw.psSetVarChar(ps, 1, sensor.getName());
 
-		//this.dbw.psSetPostGISPoint(ps, 2, sensor.getCoordinate());
-		//this.dbw.psSetBigInt(ps, 3, sensor.getLinkId());
-		//this.dbw.psSetReal(ps, 4, sensor.getOffset());
-		//this.dbw.psSetSmallInt(ps, 5, sensor.getExpId());
-		
-		/**FIXME: The commented code above should be the way to do this. 
-		 * However, Database.psSetPostGISPoint(
-		 *           String name, int index, Coordinate v) says 
-		 *   org.postgis.Point p = new org.postgis.Point(v.lon, v.lat);
-		 * when it should be 
-		 *   org.postgis.Point p = new org.postgis.Point(v.lat, v.lon);
-		 * Don't know if any other classes uses this method. 
-		 * But should be easy fix.
-		 *  
+		// this.dbw.psSetPostGISPoint(ps, 2, sensor.getCoordinate());
+		// this.dbw.psSetBigInt(ps, 3, sensor.getLinkId());
+		// this.dbw.psSetReal(ps, 4, sensor.getOffset());
+		// this.dbw.psSetSmallInt(ps, 5, sensor.getExpId());
+
+		/**
+		 * FIXME: The commented code above should be the way to do this.
+		 * However, Database.psSetPostGISPoint( String name, int index,
+		 * Coordinate v) says org.postgis.Point p = new org.postgis.Point(v.lon,
+		 * v.lat); when it should be org.postgis.Point p = new
+		 * org.postgis.Point(v.lat, v.lon); Don't know if any other classes uses
+		 * this method. But should be easy fix.
+		 * 
 		 */
 		String ps = "insert a bliptrack sensor in the prop table bad-fix";
+
 		if (!this.dbw.psHasPS(ps)) {
 			String query = "INSERT INTO bluetooth.prop("
-				+ "name, geom, fk_lid, off_set, fk_exp_id)"
-				+ " VALUES ( ? , ST_SetSRID(ST_Point(?, ?), 4326), ? , ? , ?)"
-				+ " RETURNING id";
+					+ "name, geom, fk_lid, off_set, fk_exp_id)"
+					+ " VALUES ( ? , ST_SetSRID(ST_Point(?, ?), 4326), ? , ? , ?)"
+					+ " RETURNING id";
 			this.dbw.psCreate(ps, query);
 		}
-		
+
 		this.dbw.psSetVarChar(ps, 1, sensor.getName());
 		this.dbw.psSetDouble(ps, 2, sensor.getCoordinate().lat);
 		this.dbw.psSetDouble(ps, 3, sensor.getCoordinate().lon);
 		this.dbw.psSetBigInt(ps, 4, sensor.getLinkId());
 		this.dbw.psSetReal(ps, 5, sensor.getOffset());
 		this.dbw.psSetSmallInt(ps, 6, sensor.getExpId());
-		
+
 		return this.dbw.psUpdateReturningInteger(ps);
 	}
 
@@ -409,11 +484,12 @@ public class DatabaseAccessor {
 	}
 
 	/**
-	 * Insert a new Bluetooth deployment/experiment into 
-	 * the database. The returned value is the auto incremented 
-	 * experiment id.
-	 * @param exp, a deployment/experiment with a name, 
-	 * start - and end times a corresponding network id.
+	 * Insert a new Bluetooth deployment/experiment into the database. The
+	 * returned value is the auto incremented experiment id.
+	 * 
+	 * @param exp
+	 *            , a deployment/experiment with a name, start - and end times a
+	 *            corresponding network id.
 	 * @return Experiment identifier.
 	 * @throws DatabaseException
 	 */
@@ -421,6 +497,7 @@ public class DatabaseAccessor {
 			throws DatabaseException {
 
 		String ps = "insert an experiment in the experiments table";
+
 		this.dbw.psSetVarChar(ps, 1, exp.getName());
 		this.dbw.psSetTimestamp(ps, 2, exp.getStartValidity());
 		this.dbw.psSetTimestamp(ps, 3, exp.getEndValidity());
@@ -428,31 +505,56 @@ public class DatabaseAccessor {
 
 		return this.dbw.psUpdateReturningInteger(ps);
 	}
-	
-	
+
 	/**
-	 * TODO: Methods from Blufax_feed that are not implemented.
-	 * MAY NOT USE ALL OF THEM.
+	 * Insert a Bluetooth-trip in the filtered table.
 	 * 
-	 * public LinkedList<String> getAllMacAddressesInInterval(
-	 *		TimeInterval timeInterval) throws DatabaseException {}
+	 * @param trip
+	 * @return success
+	 * @throws DatabaseException
+	 */
+	public boolean insertTrip(TripDatum trip) throws DatabaseException {
+
+		String ps = "insert a travel time datum in the filtered table";
+
+		this.dbw.psSetVarChar(ps, 1, trip.getMacAddress());
+		this.dbw.psSetSmallInt(ps, 2, (short) trip.getStartReader());
+		this.dbw.psSetSmallInt(ps, 3, (short) trip.getEndReader());
+		this.dbw.psSetTimestamp(ps, 4, trip.getStartTime());
+		this.dbw.psSetReal(ps, 5, trip.getTravelTime());
+		this.dbw.psSetBoolean(ps, 6, trip.isOutlier());
+		this.dbw.psSetVarChar(ps, 7, trip.getFilterType().toString());
+
+		boolean success = (this.dbw.psUpdate(ps) == 1);
+
+		return success;
+	}
+
+	public void updateTrip(TripDatum trip) throws DatabaseException {
+		if (!insertTrip(trip)) {
+			String ps = "update a travel time datum in the filtered table";
+			this.dbw.psSetReal(ps, 1, trip.getTravelTime());
+			this.dbw.psSetBoolean(ps, 2, trip.isOutlier());
+			this.dbw.psSetVarChar(ps, 3, trip.getMacAddress());
+			short startReader = (short) trip.getStartReader();
+			this.dbw.psSetSmallInt(ps, 4, startReader);
+			short endReader = (short) trip.getEndReader();
+			this.dbw.psSetSmallInt(ps, 5, endReader);
+			this.dbw.psSetTimestamp(ps, 6, trip.getStartTime());
+			this.dbw.psSetVarChar(ps, 7, trip.getFilterType().toString());
+			this.dbw.psUpdate(ps);
+		}
+	}
+
+	/**
+	 * TODO: Methods from Blufax_feed that are not implemented. MAY NOT USE ALL
+	 * OF THEM.
 	 * 
-	 * public boolean insertTrip(BliptrackTripDatum trip) 
-	 * 		throws DatabaseException {}
+	 * public LinkedList<String> getAllMacAddressesInInterval( TimeInterval
+	 * timeInterval) throws DatabaseException {}
 	 * 
-	 * public void updateTrip(BliptrackTripDatum trip) 
-	 * 		throws DatabaseException {}
+	 * public Time[] getStartEndTime(int expId) throws DatabaseException {}
 	 * 
-	 * public void updateOutlier(TripDatum trip)
-	 * 		throws DatabaseException {}
-	 * 
-	 * public boolean insertOutlier(TripDatum trip) 
-	 * 		throws DatabaseException {}
-	 * 
-	 * public Time[] getStartEndTime(int expId) 
-	 * 		throws DatabaseException {}
-	 * 
-	 * public void ClearFilteredWithExpId(int expId) 
-	 * 		throws DatabaseException {}
+	 * public void ClearFilteredWithExpId(int expId) throws DatabaseException {}
 	 */
 }
